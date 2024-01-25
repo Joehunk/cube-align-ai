@@ -84,8 +84,8 @@ def transform_point_cloud(point_cloud, euler_angles, translation_vector):
 def generate_random_cube_plus_label():
     point_density = random.randrange(50, 200)
     z_rotation = random.random() * 2.0 * math.pi
-    x_rotation = random.random() * 0.05 * math.pi
-    y_rotation = random.random() * 0.05 * math.pi
+    x_rotation = random.random() * 0.1 * math.pi - 0.5 * math.pi
+    y_rotation = random.random() * 0.1 * math.pi - 0.5 * math.pi
 
     x_translation = random.random() * 600
     y_translation = random.random() * 600
@@ -111,7 +111,7 @@ def generate_random_cube_plus_label():
         face_points=face_points,
         randomness=0.05 + random.random() * 0.05,
         num_outliers=random.randrange(20, 40),
-        outlier_radius=4 * random.random() + 4,
+        outlier_radius=4 * random.random() + 8,
     )
     label = generate_bottom_center_point()
     points = np.vstack([points, label])
@@ -149,9 +149,7 @@ def viz_single_cube():
 
 def save_dataset(file_name, items):
     data = [ generate_random_cube_plus_label() for i in range(items) ]
-    print(f"it is {data[0].shape}")
     np.savez_compressed(file_name, *data)
 
 if __name__ == "__main__":
-    # save_dataset('./dummy.npz', 1000)
-    viz_single_cube()
+    save_dataset('./train3_negative_xy_rotation.npz', 64000)

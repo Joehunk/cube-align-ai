@@ -113,6 +113,7 @@ def get_dataloader(file_name, batch_size=64):
 pointnet = PointNet().to(device)
 optimizer = optim.Adam(pointnet.parameters(), lr=0.001)
 criterion = nn.MSELoss()  # Or another appropriate loss function
+scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
 def train(num_epochs, train_loader):
     # Training loop
@@ -130,6 +131,7 @@ def train(num_epochs, train_loader):
             train_loss += loss.item()
             optimizer.step()
         end_time = time.time()
+        scheduler.step()
         print(f'====> Epoch: {epoch} Average loss: {train_loss / len(train_loader.dataset):.3E} ({end_time - start_time}s)')
 
 def test_train_loader(train_loader):
@@ -140,7 +142,7 @@ def test_train_loader(train_loader):
 
 def predict(file_name):
     pointnet.eval()
-    test_data = np.load(file_name)['arr_483']
+    test_data = np.load(file_name)['arr_1']
     
     test_data_norm, centroid, max_dist = normalize_point_cloud(test_data)
     coords_norm = test_data_norm[:-1, :]
@@ -153,10 +155,26 @@ def predict(file_name):
     print(f"Label: {label} output: {output_denorm}")
 
 def do_train():
-    data = get_dataloader("./train.npz")
+    data = get_dataloader("./train2_negative_xy_rotation.npz")
     train(8, data)
-    torch.save(pointnet.state_dict(), './weights1_v1.pth')
+    torch.save(pointnet.state_dict(), './weights2_v1.pth')
+
+def do_more_train():
+    pointnet.load_state_dict(torch.load('./weights2_v1.pth'))
+    data = get_dataloader("./train3_negative_xy_rotation.npz")
+    train(10, data)
+    torch.save(pointnet.state_dict(), './weights3_v1.pth')
+
+def do_predict():
+    pointnet.load_state_dict(torch.load('./weights3_v1.pth'))
+    predict('./test.npz')
 
 if __name__ == "__main__":
-    pointnet.load_state_dict(torch.load('./weights1_v1.pth'))
-    predict('./test.npz')
+    """
+    Note: the model seems to have a problem with scale. When I upped the scale variance
+    in the training data from 2x to 3x, the accuracy dropped dramatically.
+
+    Idea is to preserve scale during normalization. Always scale by a fixed factor.
+    Possibly remove outliers > max distance from the centroid.
+    """
+    do_predict()
