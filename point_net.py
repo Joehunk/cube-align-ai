@@ -3,8 +3,11 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
-from generate_cuboid import normalize_point_cloud, denormalize_point_cloud
+from generate_cuboid import normalize_point_cloud, denormalize_point_cloud, points_to_pcd
 import time
+import open3d as o3d
+
+from load_pts import get_cubes_from_file
 
 device = torch.device('mps')
 
@@ -105,7 +108,7 @@ def random_sample_pad_collate(batch):
     return pcs, labels
 
     
-def get_dataloader(file_name, batch_size=64):
+def get_normalized_dataloader(file_name, batch_size=64):
     data_set = PointsDataset(file_name, lambda pc: normalize_point_cloud(pc)[0])
     return DataLoader(data_set, batch_size=batch_size, shuffle=True, collate_fn=random_sample_pad_collate)
 
@@ -113,7 +116,8 @@ def get_dataloader(file_name, batch_size=64):
 pointnet = PointNet().to(device)
 optimizer = optim.Adam(pointnet.parameters(), lr=0.001)
 criterion = nn.MSELoss()  # Or another appropriate loss function
-scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+# By default do not decay the learning rate.
+scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=1.0)
 
 def train(num_epochs, train_loader):
     # Training loop
@@ -140,34 +144,56 @@ def test_train_loader(train_loader):
         print(f"label shape {labels.shape}")
         break
 
-def predict(file_name):
+def predict(normalized_data):
     pointnet.eval()
+    data = torch.tensor(normalized_data, dtype=torch.float32).unsqueeze(0).to(device)
+    return pointnet(data).detach().cpu().numpy()
+
+def predict_npz(file_name):
     test_data = np.load(file_name)['arr_1']
     
-    test_data_norm, centroid, max_dist = normalize_point_cloud(test_data)
+    test_data_norm, centroid = normalize_point_cloud(test_data)
     coords_norm = test_data_norm[:-1, :]
     label = test_data[-1, :]
 
-    data = torch.tensor(coords_norm, dtype=torch.float32).unsqueeze(0).to(device)
-    output_norm = pointnet(data).detach().cpu().numpy()
-    output_denorm = denormalize_point_cloud(output_norm, centroid, max_dist)
+    output_norm = predict(coords_norm)
+    output_denorm = denormalize_point_cloud(output_norm, centroid)
 
     print(f"Label: {label} output: {output_denorm}")
 
+def do_predict_pts(file_name):
+    pointnet.load_state_dict(torch.load('./weights_train2_10e_09_gamma_fixed_norm_neg_xy_2.pth'))
+    cubes = get_cubes_from_file(file_name)
+
+    for cube in cubes:
+        test_data_norm, centroid = normalize_point_cloud(cube)
+        output_norm = predict(test_data_norm)
+        output_denorm = denormalize_point_cloud(output_norm, centroid)
+
+        print(f"Denorm point {output_denorm}")
+
+        points_plus_label = np.vstack([cube, output_denorm[0]])
+         # Visualize the point cloud
+        o3d.visualization.draw_geometries([points_to_pcd(points_plus_label)])
+
+
 def do_train():
-    data = get_dataloader("./train2_negative_xy_rotation.npz")
+    data = get_normalized_dataloader("./train_negative_xy_fixed.npz")
     train(8, data)
-    torch.save(pointnet.state_dict(), './weights2_v1.pth')
+    torch.save(pointnet.state_dict(), './weights_train1_10e_no_schedule_fixed_norm_neg_xy.pth')
 
 def do_more_train():
-    pointnet.load_state_dict(torch.load('./weights2_v1.pth'))
-    data = get_dataloader("./train3_negative_xy_rotation.npz")
+    global scheduler
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+
+    pointnet.load_state_dict(torch.load('./weights_train1_10e_no_schedule_fixed_norm_neg_xy.pth'))
+    data = get_normalized_dataloader("./train_negative_xy_fixed_2.npz")
     train(10, data)
-    torch.save(pointnet.state_dict(), './weights3_v1.pth')
+    torch.save(pointnet.state_dict(), './weights_train2_10e_09_gamma_fixed_norm_neg_xy_2.pth')
 
 def do_predict():
-    pointnet.load_state_dict(torch.load('./weights3_v1.pth'))
-    predict('./test.npz')
+    pointnet.load_state_dict(torch.load('./weights_train2_10e_09_gamma_fixed_norm_neg_xy_2.pth'))
+    predict_npz('./test.npz')
 
 if __name__ == "__main__":
     """
@@ -177,4 +203,7 @@ if __name__ == "__main__":
     Idea is to preserve scale during normalization. Always scale by a fixed factor.
     Possibly remove outliers > max distance from the centroid.
     """
-    do_predict()
+    # do_train()
+    # do_predict()
+    # do_more_train()
+    do_predict_pts("3-transformedModels_3.pts")

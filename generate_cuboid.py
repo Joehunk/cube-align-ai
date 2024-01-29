@@ -84,12 +84,12 @@ def transform_point_cloud(point_cloud, euler_angles, translation_vector):
 def generate_random_cube_plus_label():
     point_density = random.randrange(50, 200)
     z_rotation = random.random() * 2.0 * math.pi
-    x_rotation = random.random() * 0.1 * math.pi - 0.5 * math.pi
-    y_rotation = random.random() * 0.1 * math.pi - 0.5 * math.pi
+    x_rotation = random.random() * 0.1 * math.pi - 0.05 * math.pi
+    y_rotation = random.random() * 0.1 * math.pi - 0.05 * math.pi
 
-    x_translation = random.random() * 600
-    y_translation = random.random() * 600
-    z_translation = random.random() * 20
+    x_translation = random.random() * 1200
+    y_translation = random.random() * 1200
+    z_translation = random.random() * 20 - 60
 
     # Simulate some of the side faces being in shadow
     faces = [ 'left', 'front', 'right', 'back']
@@ -118,20 +118,22 @@ def generate_random_cube_plus_label():
     points = transform_point_cloud(points, (z_rotation, y_rotation, x_rotation), (x_translation, y_translation, z_translation))
     return points
 
-def normalize_point_cloud(points):
+def normalize_point_cloud(points, norm_radius=4.0):
     # Centering
     centroid = np.mean(points, axis=0)
     centered_points = points - centroid
 
     # Scaling
-    max_distance = np.max(np.sqrt(np.sum(centered_points ** 2, axis=1)))
-    normalized_points = centered_points / max_distance
+    normalized_points = centered_points / norm_radius
 
-    return normalized_points, centroid, max_distance
+    # Filter past norm_radius
+    normalized_points = np.stack([ pt for pt in normalized_points if np.linalg.norm(pt) <= norm_radius ])
 
-def denormalize_point_cloud(normalized_points, centroid, max_distance):
+    return normalized_points, centroid
+
+def denormalize_point_cloud(normalized_points, centroid, norm_radius=4.0):
     # Rescaling
-    rescaled_points = normalized_points * max_distance
+    rescaled_points = normalized_points * norm_radius
 
     # Recentering
     denormalized_points = rescaled_points + centroid
@@ -152,4 +154,5 @@ def save_dataset(file_name, items):
     np.savez_compressed(file_name, *data)
 
 if __name__ == "__main__":
-    save_dataset('./train3_negative_xy_rotation.npz', 64000)
+    save_dataset('./train_negative_xy_fixed_2.npz', 64000)
+    # viz_single_cube()
