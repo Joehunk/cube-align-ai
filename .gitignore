@@ -1,3 +1,4 @@
 *.npz
 *.pth
+*.pts
 __pycache__/*
